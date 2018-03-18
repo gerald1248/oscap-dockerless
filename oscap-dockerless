@@ -1,0 +1,128 @@
+#!/bin/bash
+
+usage() {
+  arg0=`basename $0`
+  echo "$arg0 -- oscap wrapper for saved Docker images"
+  echo "Usage: $arg0 [-h/--help] PATH_TO_TARFILES"
+  echo "e.g. $arg0 /mnt/data"
+}
+
+scan() {
+  basename=`basename $1 .tar`
+  temp_dir=`mktemp -d /tmp/$basename.XXXXXX`
+  datapath=`dirname $1`
+
+  echo "Extracting layers to $temp_dir"
+  # untar first
+  tar -xf $1 -C $temp_dir
+  docker_config=$temp_dir/`jq .[0].Config $temp_dir/manifest.json -r`
+
+  #oscap environment vars
+  export OSCAP_PROBE_ROOT=$temp_dir
+  export OSCAP_PROBE_ARCHITECTURE=`jq .architecture $docker_config`
+  export OSCAP_PROBE_PRIMARY_HOST_NAME=$basename
+  export OSCAP_PROBE_OS_NAME="Linux"
+  export OSCAP_PROBE_RPMDB_PATH=/var/lib/rpm
+
+  # untar layers in order
+  for layer in `jq .[0].Layers $temp_dir/manifest.json | jq -r '.[]'`
+  do
+    tar -xf $temp_dir/$layer -C $temp_dir/
+  done
+
+  distro_name=`cat $temp_dir/etc/system-release-cpe | cut -d ":" -f3`
+  distro_version=`cat $temp_dir/etc/system-release-cpe | cut -d ":" -f5 | cut -c1`
+  xccdf_report="$datapath/$basename-xccdf-report.html"
+  xccdf_results="$datapath/$basename-xccdf-results.xml"
+  oval_report="$datapath/$basename-oval-report.html"
+  oval_results="$datapath/$basename-oval-results.xml"
+
+  # scap filenames abbreviate to 'rhel'
+  if [ "$distro_name" == "redhat" ]
+  then
+    distro_name=rhel
+  fi
+
+  ds_definition=/usr/share/xml/scap/ssg/content/ssg-$distro_name$distro_version-ds.xml
+
+  # pick STIG profile as it's a suitably strict default
+  profile=`oscap info $ds_definition | grep "profile.*stig" | head -n1 | sed 's/^[[:space:]]*//'`
+
+  oscap oval eval --fetch-remote-resources --report $oval_report --results $oval_results $ds_definition
+  oscap xccdf eval --fetch-remote-resources --profile $profile --report $xccdf_report --results $xccdf_results $ds_definition
+
+  if [ -f $xccdf_report ]
+  then
+    echo "Written $xccdf_report"
+  fi
+
+  if [ -f $xccdf_results ]
+  then
+    echo "Written $xccdf_results"
+    echo
+    score=`xmllint --xpath "/*[local-name()='Benchmark']/*[local-name()='TestResult']/*[local-name()='score']/text()" $xccdf_results`
+    echo "Score: $score"
+    ret=`printf "%.*f\n" 0 $score`
+    total=$(($total + $ret))
+  fi
+
+  rm -rf $temp_dir
+}
+
+# process input 
+argc=$#
+arg=$1; shift
+if [ "$arg" = "-h" ] || [ "$arg" = "--help" ] || [ "$argc" -ne 1 ]
+then
+  usage
+  exit 0
+fi
+
+# delete trailing slash if any
+path=`echo $arg | sed 's/\/$//'`
+
+# common error conditions
+if [ ! -d $path ]
+then
+  echo "data path $path not found"
+  exit 1
+fi
+
+if [ `ls -l $path/*.tar | wc -l` -eq 0 ]
+then
+  echo "no tarfiles in $path"
+  exit 1
+fi
+
+if [ ! "${path:0:1}" == "/" ]
+then
+  echo "absolute path required"
+  exit 1
+fi
+
+# start scan
+total=0
+count=0
+for tarfile in `ls $path/*.tar`
+do
+  echo "Scanning $tarfile"
+  scan $tarfile
+  count=$(($count + 1))
+done
+
+avg_score=$(($total/$count))
+
+# only show average if multiple images found
+if [ $count -gt 1 ]
+then
+  echo "Average score: $avg_score"
+fi
+
+# return rounded average
+ret=`printf '%.*f\n' 0 $score`
+if [ $ret -lt 2 ]
+then
+  ret=2
+fi
+
+exit `printf "%.*f\n" 0 $avg_score`

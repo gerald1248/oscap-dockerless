@@ -1,0 +1,26 @@
+#!/bin/sh
+
+test_no_param() {
+  ./oscap-dockerless
+  assertEquals $? 0
+}
+
+test_data_dir_not_found() {
+  ./oscap-dockerless /non/existent/dir
+  assertEquals $? 1
+}
+
+test_data_dir_relative() {
+  ./oscap-dockerless relative/dir
+  assertEquals $? 1
+}
+
+test_no_tarfiles() {
+  ./oscap-dockerless `pwd`
+  assertEquals $? 1
+}
+
+. shunit2
+test_data_dir_not_found
+test_data_dir_relative
+test_no_tarfiles
