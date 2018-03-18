@@ -18,7 +18,7 @@ Written /mnt/data/centos7-unpatched-xccdf-results.xml
 
 ## Build
 ```
-$ git clone gerald1248/oscap-dockerless && cd oscap-dockerless
+$ git clone git@github.com:gerald1248/oscap-dockerless.git
 $ docker build -t oscap-dockerless .
 $ docker run -ti oscap-dockerless oscap-dockerless --help
 oscap-dockerless -- oscap wrapper for saved Docker images
