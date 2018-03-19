@@ -5,6 +5,8 @@ usage() {
   echo "$arg0 -- oscap wrapper for saved Docker images"
   echo "Usage: $arg0 [-h/--help] PATH_TO_TARFILES"
   echo "e.g. $arg0 /mnt/data"
+  echo "Set OSCAP_DOCKERLESS_PROFILE to specify a specific profile"
+  echo "($arg0 defaults to STIG)"
 }
 
 scan() {
@@ -30,6 +32,14 @@ scan() {
     tar -xf $temp_dir/$layer -C $temp_dir/
   done
 
+  release_file=$temp_dir/etc/system-release-cpe
+  if [ ! -f $release_file ]
+  then
+    echo "release file $release_file not found"
+    rm -rf $temp_dir
+    exit 1
+  fi
+
   distro_name=`cat $temp_dir/etc/system-release-cpe | cut -d ":" -f3`
   distro_version=`cat $temp_dir/etc/system-release-cpe | cut -d ":" -f5 | cut -c1`
   xccdf_report="$datapath/$basename-xccdf-report.html"
@@ -44,9 +54,14 @@ scan() {
   fi
 
   ds_definition=/usr/share/xml/scap/ssg/content/ssg-$distro_name$distro_version-ds.xml
+  if [ ! -f $ds_definition ]
+  then
+    echo "definition file $ds_definition not found"
+    rm -rf $temp_dir
+    exit 1
+  fi
 
-  # pick STIG profile as it's a suitably strict default
-  profile=`oscap info $ds_definition | grep "profile.*stig" | head -n1 | sed 's/^[[:space:]]*//'`
+  profile=`oscap info $ds_definition | grep "$OSCAP_DOCKERLESS_PROFILE" | head -n1 | sed 's/^[[:space:]]*//'`
 
   oscap oval eval --fetch-remote-resources --report $oval_report --results $oval_results $ds_definition
   oscap xccdf eval --fetch-remote-resources --profile $profile --report $xccdf_report --results $xccdf_results $ds_definition
@@ -76,6 +91,11 @@ if [ "$arg" = "-h" ] || [ "$arg" = "--help" ] || [ "$argc" -ne 1 ]
 then
   usage
   exit 0
+fi
+
+if [ -z $OSCAP_DOCKERLESS_PROFILE ]
+then
+  OSCAP_DOCKERLESS_PROFILE="profile.*stig"
 fi
 
 # delete trailing slash if any
