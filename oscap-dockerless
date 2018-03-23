@@ -120,6 +120,17 @@ then
   exit 1
 fi
 
+# attempt to download current datastreams
+security_guide_latest=`curl -s https://api.github.com/repos/OpenSCAP/scap-security-guide/releases/latest | jq -c '.assets[] | select( .name | contains(".zip"))' | grep -v oval | tail -n1 | jq -rc '.browser_download_url'`
+
+echo "Security Guide download URL: $security_guide_latest"
+
+curl -L $security_guide_latest -o /tmp/latest.zip
+unzip /tmp/latest.zip -d /tmp
+cp /tmp/scap-security*/*-ds.xml /usr/share/xml/scap/ssg/content/
+rm -f /tmp/latest.zip
+rm -rf /tmp/scap-security*
+
 # start scan
 total=0
 count=0
