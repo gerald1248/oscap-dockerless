@@ -33,15 +33,15 @@ scan() {
   done
 
   release_file=$temp_dir/etc/system-release-cpe
-  if [ ! -f $release_file ]
+  if [ -f $release_file ]
   then
-    echo "release file $release_file not found"
-    rm -rf $temp_dir
-    exit 1
+    distro_name=`cat $temp_dir/etc/system-release-cpe | cut -d ":" -f3`
+    distro_version=`cat $temp_dir/etc/system-release-cpe | cut -d ":" -f5 | cut -c1`
+  else
+    distro_name="rhel"
+    distro_version="7"
   fi
 
-  distro_name=`cat $temp_dir/etc/system-release-cpe | cut -d ":" -f3`
-  distro_version=`cat $temp_dir/etc/system-release-cpe | cut -d ":" -f5 | cut -c1`
   xccdf_report="$datapath/$basename-xccdf-report.html"
   xccdf_results="$datapath/$basename-xccdf-results.xml"
   oval_report="$datapath/$basename-oval-report.html"
